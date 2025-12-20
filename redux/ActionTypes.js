@@ -1,0 +1,25 @@
+// Cities
+export const CITIES_LOADING = 'CITIES_LOADING';
+export const CITIES_SUCCESS = 'CITIES_SUCCESS';
+export const CITIES_FAILED  = 'CITIES_FAILED';
+export const SELECT_CITY    = 'SELECT_CITY';
+
+// Weather
+export const WEATHER_LOADING = 'WEATHER_LOADING';
+export const WEATHER_SUCCESS = 'WEATHER_SUCCESS';
+export const WEATHER_FAILED  = 'WEATHER_FAILED';
+
+// Favorites
+export const FAVORITES_LOADING = 'FAVORITES_LOADING';
+export const FAVORITES_SUCCESS = 'FAVORITES_SUCCESS';
+export const FAVORITES_FAILED  = 'FAVORITES_FAILED';
+export const ADD_FAVORITE      = 'ADD_FAVORITE';
+export const REMOVE_FAVORITE   = 'REMOVE_FAVORITE';
+export const FAVORITES_CLEAR = "FAVORITES_CLEAR";
+
+
+// Auth
+export const AUTH_LOADING = 'AUTH_LOADING';
+export const AUTH_SUCCESS = 'AUTH_SUCCESS';
+export const AUTH_FAILED  = 'AUTH_FAILED';
+export const AUTH_SIGNOUT  = 'AUTH_SIGNOUT'; 
