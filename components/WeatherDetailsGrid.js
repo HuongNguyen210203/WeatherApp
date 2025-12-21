@@ -80,8 +80,9 @@ export default function WeatherDetailsGrid({ current, currentUnits, daily, airQu
         </TouchableOpacity>
       </View>
 
-      {/* UV + SUNRISE */}
+      {/* UV + SUNRISE/SUNSET */}
       <View style={styles.detailsRow}>
+        {/* UV */}
         <View style={styles.detailCardHalf}>
           <View style={styles.cardHeaderWithIcon}>
             <MaterialCommunityIcons name="weather-sunny" size={20} color="#A39AD5" />
@@ -102,29 +103,32 @@ export default function WeatherDetailsGrid({ current, currentUnits, daily, airQu
           </View>
         </View>
 
+        {/* SUNRISE + SUNSET (đã chỉnh rõ hơn) */}
         <View style={styles.detailCardHalf}>
           <View style={styles.cardHeaderWithIcon}>
             <MaterialCommunityIcons name="weather-sunset-up" size={20} color="#A39AD5" />
-            <Text style={styles.cardHeaderTextSmall}>SUNRISE</Text>
+            <Text style={styles.cardHeaderTextSmall}>SUNRISE / SUNSET</Text>
           </View>
 
-          <Text style={styles.detailValueLarge}>
-            {sunrise ? fmtHour(sunrise) : '—'}
-          </Text>
+          <View style={styles.sunTimesRow}>
+            <View style={styles.sunTimeCol}>
+              <Text style={styles.sunLabel}>Sunrise</Text>
+              <Text style={styles.sunTimeBig}>{sunrise ? fmtHour(sunrise) : '—'}</Text>
+            </View>
 
-          <View style={styles.sunriseGraph}>
-            <View style={styles.wavyLine} />
-            <View style={styles.graphDot} />
+            <View style={styles.sunDivider} />
+
+            <View style={styles.sunTimeCol}>
+              <Text style={styles.sunLabel}>Sunset</Text>
+              <Text style={styles.sunTimeBig}>{sunset ? fmtHour(sunset) : '—'}</Text>
+            </View>
           </View>
-
-          <Text style={styles.detailAccent}>
-            Sunset: {sunset ? fmtHour(sunset) : '—'}
-          </Text>
         </View>
       </View>
 
       {/* WIND + RAINFALL */}
       <View style={styles.detailsRow}>
+        {/* WIND */}
         <View style={styles.detailCardHalf}>
           <View style={styles.cardHeaderWithIcon}>
             <MaterialCommunityIcons name="weather-windy" size={20} color="#A39AD5" />
@@ -135,9 +139,12 @@ export default function WeatherDetailsGrid({ current, currentUnits, daily, airQu
             {current?.wind_speed_10m != null ? Math.round(current.wind_speed_10m) : '—'}
           </Text>
           <Text style={styles.detailAccent}>{windUnit}</Text>
-          <Text style={styles.detailAccent}>{windDirToText(current?.wind_direction_10m)}</Text>
+          <Text style={styles.detailAccent}>
+            {windDirToText(current?.wind_direction_10m)}
+          </Text>
         </View>
 
+        {/* RAINFALL */}
         <View style={styles.detailCardHalf}>
           <View style={styles.cardHeaderWithIcon}>
             <MaterialCommunityIcons name="weather-rainy" size={20} color="#A39AD5" />
@@ -170,9 +177,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  cardHeaderWithIcon: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  cardHeaderText: { color: '#A39AD5', fontSize: 12, fontWeight: '600', letterSpacing: 0.5 },
-  cardHeaderTextSmall: { color: '#A39AD5', fontSize: 11, fontWeight: '600', marginLeft: 6 },
+  cardHeaderWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  cardHeaderText: {
+    color: '#A39AD5',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  cardHeaderTextSmall: {
+    color: '#A39AD5',
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
 
   bigValue: { color: '#FFFFFF', fontSize: 18, fontWeight: '600', marginBottom: 12 },
 
@@ -184,7 +205,12 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginBottom: 12,
   },
-  progressBarFill: { height: '100%', borderRadius: 4, backgroundColor: '#50D7FF', position: 'relative' },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 4,
+    backgroundColor: '#50D7FF',
+    position: 'relative',
+  },
   progressBarDot: {
     position: 'absolute',
     right: -6,
@@ -202,10 +228,39 @@ const styles = StyleSheet.create({
 
   detailsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
   detailCardHalf: { width: '48%', borderRadius: 24, padding: 16, backgroundColor: '#342561' },
-  detailValueLarge: { color: '#FFFFFF', fontSize: 24, fontWeight: '600', marginTop: 8, marginBottom: 4 },
+
+  detailValueLarge: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '600',
+    marginTop: 8,
+    marginBottom: 4,
+  },
   detailAccent: { color: '#A39AD5', fontSize: 12, marginTop: 4 },
 
-  sunriseGraph: { height: 40, marginVertical: 8, position: 'relative', justifyContent: 'center' },
-  wavyLine: { position: 'absolute', left: 0, right: 0, height: 2, backgroundColor: '#50D7FF', borderRadius: 1, top: '50%' },
-  graphDot: { position: 'absolute', right: 20, top: '50%', marginTop: -4, width: 8, height: 8, borderRadius: 4, backgroundColor: '#FFFFFF' },
+  /* ===== SUNRISE/SUNSET (NEW) ===== */
+  sunTimesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  sunTimeCol: { flex: 1 },
+  sunLabel: { color: '#A39AD5', fontSize: 12, marginBottom: 4 },
+  sunTimeBig: { color: '#FFFFFF', fontSize: 22, fontWeight: '700' },
+  sunDivider: {
+    width: 1,
+    height: 44,
+    backgroundColor: '#251C51',
+    marginHorizontal: 10,
+    borderRadius: 1,
+  },
+  sunProgressTrack: {
+    marginTop: 14,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#251C51',
+    position: 'relative',
+    overflow: 'hidden',
+  },
 });

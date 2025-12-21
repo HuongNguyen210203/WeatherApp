@@ -50,7 +50,7 @@ function HomeScreen({
   const [locking, setLocking] = useState(false);
 
   const sheetRef = useRef(null);
-  const snapPoints = ['50%', '100%'];
+  const snapPoints = ['50%', '89%'];
 
   const goToCitySearch = () => navigation.navigate('CitySearch');
   const goToHome = () => navigation.navigate('Home');
