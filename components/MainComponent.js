@@ -13,12 +13,10 @@ import { fetchFavorites } from '../redux/ActionCreators';
 
 const Stack = createNativeStackNavigator();
 
-// ✅ chống flash trắng khi transition
 const MyTheme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
-    background: '#0B0B1A',
   },
 };
 
@@ -61,17 +59,34 @@ function Main({ fetchFavorites }) {
   return (
     <NavigationContainer theme={MyTheme}>
       <Stack.Navigator
+        initialRouteName="Home"
         screenOptions={{
           headerShown: false,
+          // animation mặc định cho các màn dạng push
           animation: 'slide_from_right',
           animationDuration: 240,
-
           contentStyle: { backgroundColor: '#0B0B1A' },
         }}
       >
         <Stack.Screen name="Home" component={HomeScreen} />
-        <Stack.Screen name="CitySearch" component={WeatherListScreen} />
-        <Stack.Screen name="Favorites" component={FavoritesScreen} />
+        <Stack.Screen
+          name="CitySearch"
+          component={WeatherListScreen}
+          options={{
+            presentation: 'modal',
+            animation: 'slide_from_bottom',
+            animationDuration: 260,
+          }}
+        />
+
+        <Stack.Screen 
+          name="Favorites" 
+          component={FavoritesScreen}
+          options={{
+            animation: 'slide_from_right',
+            animationDuration: 240,
+          }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

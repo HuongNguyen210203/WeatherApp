@@ -94,7 +94,7 @@ function HomeScreen({
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ImageBackground
         source={require('../assets/night-sky.png')}
-        style={styles.appBackground}
+        style={[styles.appBackground, { backgroundColor: '#0B0B1A' }]}
         resizeMode="cover"
       >
         <SafeAreaView style={styles.safeArea}>

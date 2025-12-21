@@ -120,12 +120,13 @@ function FavoritesScreen({
 
 const styles = StyleSheet.create({
   bg: { flex: 1 },
-  safe: { flex: 1, backgroundColor: 'rgba(52, 37, 97, 0.7)' },
+  safe: { flex: 1, backgroundColor: 'transparent' },
 
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 18,
+    backgroundColor: 'rgba(52, 37, 97, 0.7)',
     paddingTop: 6, // ✅ hạ xuống thêm chút (đỡ dính status bar)
     paddingBottom: 10,
   },
@@ -152,7 +153,7 @@ const styles = StyleSheet.create({
   searchWrap: {
     marginHorizontal: 18,
     marginTop: 10,
-    backgroundColor: 'rgba(52, 37, 97, 0.7)',
+    backgroundColor: 'rgba(52, 37, 97, 0.85)',
     borderRadius: 18,
     paddingHorizontal: 14,
     height: 54,

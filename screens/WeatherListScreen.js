@@ -1,11 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  SafeAreaView,
+  Platform,
+  StatusBar,
+} from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import { MaterialIcons } from '@expo/vector-icons';
 import { connect } from 'react-redux';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
 import { fetchCities, selectCity } from '../redux/ActionCreators';
 
 /* ================== Open-Meteo helpers ================== */
@@ -36,8 +42,12 @@ const fetchCurrentWeather = async (lat, lon) => {
   const code = json?.current?.weather_code;
   const isDay = json?.current?.is_day;
 
-  const hi = Array.isArray(json?.daily?.temperature_2m_max) ? json.daily.temperature_2m_max[0] : null;
-  const lo = Array.isArray(json?.daily?.temperature_2m_min) ? json.daily.temperature_2m_min[0] : null;
+  const hi = Array.isArray(json?.daily?.temperature_2m_max)
+    ? json.daily.temperature_2m_max[0]
+    : null;
+  const lo = Array.isArray(json?.daily?.temperature_2m_min)
+    ? json.daily.temperature_2m_min[0]
+    : null;
 
   return { temp, hi, lo, code, isDay };
 };
@@ -56,15 +66,7 @@ const codeToText = (code) => {
 
 /* ================== Screen ================== */
 
-function WeatherListScreen({ cities, fetchCities, selectCity }) {
-  const navigation = useNavigation();
-
-  // ✅ Back an toàn (nếu không có history thì về Home)
-  const onBack = () => {
-    if (navigation?.canGoBack?.()) navigation.goBack();
-    else navigation.navigate('Home');
-  };
-
+function WeatherListScreen({ navigation, cities, fetchCities, selectCity }) {
   const [q, setQ] = useState('');
 
   // Online search state
@@ -73,7 +75,7 @@ function WeatherListScreen({ cities, fetchCities, selectCity }) {
   const [onlineResults, setOnlineResults] = useState([]);
 
   // Cache weather preview by lat/lon
-  const weatherCacheRef = useRef(new Map());
+  const weatherCacheRef = useRef(new Map()); // key: "lat,lon" -> {temp,hi,lo,code}
   const [, forceRerender] = useState(0);
 
   useEffect(() => {
@@ -152,16 +154,16 @@ function WeatherListScreen({ cities, fetchCities, selectCity }) {
       weatherCacheRef.current.set(key, w);
       forceRerender((x) => x + 1);
     } catch {
-      // ignore
+      // ignore per-item preview errors
     }
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.weatherListHeader}>
-          <TouchableOpacity onPress={onBack} style={styles.backButton}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
             <MaterialIcons name="arrow-back" size={24} color="#FFFFFF" />
           </TouchableOpacity>
 
@@ -190,14 +192,19 @@ function WeatherListScreen({ cities, fetchCities, selectCity }) {
         </View>
 
         {/* Loading / Error */}
-        {cities?.isLoading ? <Text style={styles.hintText}>Loading saved cities...</Text> : null}
-        {cities?.errMess ? <Text style={styles.errText}>{cities.errMess}</Text> : null}
+        {cities?.isLoading ? (
+          <Text style={styles.hintText}>Loading saved cities...</Text>
+        ) : cities?.errMess ? (
+          <Text style={styles.errText}>{cities.errMess}</Text>
+        ) : null}
 
         {q.trim().length >= 2 && onlineLoading ? (
           <Text style={styles.hintText}>Searching worldwide...</Text>
         ) : null}
 
-        {q.trim().length >= 2 && !!onlineErr ? <Text style={styles.errText}>{onlineErr}</Text> : null}
+        {q.trim().length >= 2 && !!onlineErr ? (
+          <Text style={styles.errText}>{onlineErr}</Text>
+        ) : null}
 
         {/* List */}
         <ScrollView
@@ -220,11 +227,11 @@ function WeatherListScreen({ cities, fetchCities, selectCity }) {
 
             return (
               <TouchableOpacity
-                key={String(item.id ?? `${item.lat},${item.lon}`)}
+                key={String(item.id)}
                 style={styles.weatherCard}
                 onPress={() => {
                   selectCity(item);
-                  navigation.navigate('Home');
+                  navigation.goBack();
                 }}
               >
                 <View style={styles.weatherCardLeft}>
@@ -237,6 +244,7 @@ function WeatherListScreen({ cities, fetchCities, selectCity }) {
                   <Text style={styles.weatherCardCondition}>{condText}</Text>
                 </View>
 
+                {/* bạn bảo bỏ icon => để trống */}
                 <View style={styles.weatherCardRight} />
               </TouchableOpacity>
             );
@@ -257,15 +265,23 @@ const mapStateToProps = (state) => ({
   cities: state.cities,
 });
 
-export default connect(mapStateToProps, { fetchCities, selectCity })(WeatherListScreen);
+const mapDispatchToProps = {
+  fetchCities,
+  selectCity,
+};
+
+export default connect(mapStateToProps, mapDispatchToProps)(WeatherListScreen);
 
 /* ================== Styles ================== */
 
 const styles = StyleSheet.create({
+  // ✅ Đây là phần bạn cần: hạ toàn bộ UI xuống tránh camera/status bar
   safeArea: {
     flex: 1,
     backgroundColor: '#251C51',
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) + 1: 0,
   },
+
   container: { flex: 1 },
 
   weatherListHeader: {
