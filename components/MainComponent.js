@@ -1,53 +1,95 @@
 import React, { useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { connect } from 'react-redux';
 
 import HomeScreen from '../screens/HomeScreen';
 import WeatherListScreen from '../screens/WeatherListScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
 
 import { getDeviceId } from '../shared/deviceId';
-import { supabase } from '../shared/supabaseClient';
+import { supabaseWithDevice } from '../shared/supabaseClient';
+import { fetchFavorites } from '../redux/ActionCreators';
 
 const Stack = createNativeStackNavigator();
 
-function Main() {
+const MyTheme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+  },
+};
+
+function Main({ fetchFavorites }) {
   useEffect(() => {
+    let mounted = true;
+
     (async () => {
       try {
         const id = await getDeviceId();
+        if (!mounted) return;
+
         console.log('App DEVICE_ID:', id);
 
-        const { error } = await supabase
-          .from('anonymous_users')
-          .upsert(
-            {
-              device_id: id,
-              last_seen_at: new Date().toISOString(),
-            },
-            { onConflict: 'device_id' }
-          );
+        const client = supabaseWithDevice(id);
 
-        if (error) {
-          console.log('Upsert anonymous_users error:', error);
-        } else {
-          console.log('Upsert anonymous_users OK');
-        }
+        const payload = {
+          device_id: id,
+          last_seen_at: new Date().toISOString(),
+        };
+
+        const { error } = await client
+          .from('anonymous_users')
+          .upsert(payload, { onConflict: 'device_id' });
+
+        if (error) console.log('Upsert anonymous_users error:', error?.message ?? error);
+        else console.log('Upsert anonymous_users OK');
+
+        await fetchFavorites();
       } catch (e) {
-        console.log('init anonymous user failed:', e);
+        console.log('init anonymous user failed:', e?.message ?? e);
       }
     })();
-  }, []);
+
+    return () => {
+      mounted = false;
+    };
+  }, [fetchFavorites]);
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Home">
+    <NavigationContainer theme={MyTheme}>
+      <Stack.Navigator
+        initialRouteName="Home"
+        screenOptions={{
+          headerShown: false,
+          // animation mặc định cho các màn dạng push
+          animation: 'slide_from_right',
+          animationDuration: 240,
+          contentStyle: { backgroundColor: '#0B0B1A' },
+        }}
+      >
         <Stack.Screen name="Home" component={HomeScreen} />
-        <Stack.Screen name="CitySearch" component={WeatherListScreen} />
-        <Stack.Screen name="Favorites" component={FavoritesScreen} />
+        <Stack.Screen
+          name="CitySearch"
+          component={WeatherListScreen}
+          options={{
+            presentation: 'modal',
+            animation: 'slide_from_bottom',
+            animationDuration: 260,
+          }}
+        />
+
+        <Stack.Screen 
+          name="Favorites" 
+          component={FavoritesScreen}
+          options={{
+            animation: 'slide_from_right',
+            animationDuration: 240,
+          }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
 
-export default Main;
+export default connect(null, { fetchFavorites })(Main);

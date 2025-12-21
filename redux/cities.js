@@ -18,8 +18,15 @@ export const Cities = (state = initialState, action) => {
     case ActionTypes.CITIES_FAILED:
       return { ...state, isLoading: false, errMess: action.payload };
 
-    case ActionTypes.SELECT_CITY:
-      return { ...state, selected: action.payload };
+      case ActionTypes.SELECT_CITY: {
+      const c = action.payload;
+      const fixed =
+        c && typeof c.id === 'string' && c.id.startsWith('geo:')
+          ? { ...c, id: null }
+          : c;
+
+      return { ...state, selected: fixed };
+    }
 
     default:
       return state;
