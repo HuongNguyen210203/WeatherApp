@@ -1,7 +1,10 @@
 import * as ActionTypes from './ActionTypes';
-import { supabase } from '../shared/supabaseClient';
+import { supabase, supabaseWithDevice } from '../shared/supabaseClient';
+import { getDeviceId } from '../shared/deviceId'; // nếu file bạn là deviceid.js thì đổi thành '../shared/deviceid'
 
-//cities
+// =====================
+// CITIES (không cần device header)
+// =====================
 export const fetchCities = () => async (dispatch) => {
   dispatch({ type: ActionTypes.CITIES_LOADING });
 
@@ -10,17 +13,18 @@ export const fetchCities = () => async (dispatch) => {
     .select('id,name,country,lat,lon')
     .order('name', { ascending: true });
 
-  if (error) return dispatch({ type: ActionTypes.CITIES_FAILED, payload: error.message });
+  if (error) {
+    return dispatch({ type: ActionTypes.CITIES_FAILED, payload: error.message });
+  }
+
   dispatch({ type: ActionTypes.CITIES_SUCCESS, payload: data ?? [] });
-  console.log('fetchCities start');
-  console.log('result', { data, error });
-
 };
-
 
 export const selectCity = (city) => ({ type: ActionTypes.SELECT_CITY, payload: city });
 
-//weather
+// =====================
+// WEATHER (không cần device header)
+// =====================
 export const fetchForecast = (lat, lon) => async (dispatch) => {
   dispatch({ type: ActionTypes.WEATHER_LOADING });
 
@@ -28,195 +32,116 @@ export const fetchForecast = (lat, lon) => async (dispatch) => {
     body: { lat, lon },
   });
 
-  if (error) return dispatch({ type: ActionTypes.WEATHER_FAILED, payload: error.message });
+  if (error) {
+    return dispatch({ type: ActionTypes.WEATHER_FAILED, payload: error.message });
+  }
+
   dispatch({ type: ActionTypes.WEATHER_SUCCESS, payload: data });
 };
 
-export const addFavorite = (cityId) => async (dispatch) => {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const userId = sessionData?.session?.user?.id;
-
-  if (!userId) return; // chưa login thì lát mình xử lý UX
-
-  const { error } = await supabase
-    .from('favorites')
-    .insert({ user_id: userId, city_id: cityId });
-
-  if (!error) dispatch(fetchFavorites());
-};
-
-export const removeFavorite = (cityId) => async (dispatch) => {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const userId = sessionData?.session?.user?.id;
-
-  if (!userId) return;
-
-  const { error } = await supabase
-    .from('favorites')
-    .delete()
-    .eq('user_id', userId)
-    .eq('city_id', cityId);
-
-  if (!error) dispatch(fetchFavorites());
-};
-
-
-// helper: chuẩn hoá payload theo reducer auth của bạn
-const authPayload = (session) => ({
-  session: session ?? null,
-  user: session?.user ?? null,
-});
-
-let authSub = null;
-
-export const bootstrapAuth = () => async (dispatch) => {
-  dispatch({ type: ActionTypes.AUTH_LOADING });
-
+// =====================
+// ANONYMOUS USER INIT (cần device header nếu bật RLS)
+// =====================
+export const initAnonymousUser = () => async (dispatch) => {
   try {
-    // 1) lấy session hiện tại
-    const { data, error } = await supabase.auth.getSession();
-    if (error) throw error;
+    const deviceId = await getDeviceId();
+    const sb = supabaseWithDevice(deviceId);
 
-    const session = data?.session ?? null;
+    // Upsert device_id lên bảng anonymous_users
+    const { error } = await sb
+      .from('anonymous_users')
+      .upsert({ device_id: deviceId }, { onConflict: 'device_id' });
 
-    dispatch({
-      type: ActionTypes.AUTH_SUCCESS,
-      payload: authPayload(session),
-    });
-
-    // 2) subscribe (chỉ gắn 1 lần)
-    if (!authSub) {
-      const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
-        if (newSession) {
-          dispatch({
-            type: ActionTypes.AUTH_SUCCESS,
-            payload: authPayload(newSession),
-          });
-        } else {
-          dispatch({ type: ActionTypes.AUTH_SIGNOUT });
-        }
-      });
-
-      authSub = sub?.subscription ?? null;
+    if (error) {
+      console.log('upsert anonymous_users error:', error.message);
+      // vẫn tiếp tục, vì app vẫn có deviceId local
     }
-    if (session) {
-      await dispatch(fetchFavorites());
-    } else {
-      dispatch({ type: ActionTypes.FAVORITES_CLEAR });
-    }
+
+    await dispatch(fetchFavorites(deviceId));
   } catch (e) {
-    dispatch({
-      type: ActionTypes.AUTH_FAILED,
-      payload: e?.message ?? 'bootstrapAuth failed',
-    });
+    console.log('initAnonymousUser failed:', e?.message ?? e);
   }
 };
 
-export const signInWithEmail = (email, password) => async (dispatch) => {
-  dispatch({ type: ActionTypes.AUTH_LOADING });
-
-  try {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (error) throw error;
-
-    const accessToken = data?.session?.access_token;
-    console.log('ACCESS TOKEN:', accessToken);
-
-    const session = data?.session ?? null;
-
-    dispatch({
-      type: ActionTypes.AUTH_SUCCESS,
-      payload: authPayload(session),
-    });
-    //auto sync
-    await dispatch(fetchFavorites());
-  } catch (e) {
-    dispatch({
-      type: ActionTypes.AUTH_FAILED,
-      payload: e?.message ?? 'Login failed',
-    });
-  }
-};
-
-export const signUpWithEmail = (email, password) => async (dispatch) => {
-  dispatch({ type: ActionTypes.AUTH_LOADING });
-
-  try {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-    if (error) throw error;
-
-    
-    const session = data?.session ?? null;
-
-    dispatch({
-      type: ActionTypes.AUTH_SUCCESS,
-      payload: authPayload(session),
-    });
-  } catch (e) {
-    dispatch({
-      type: ActionTypes.AUTH_FAILED,
-      payload: e?.message ?? 'Signup failed',
-    });
-  }
-};
-
-export const signOut = () => async (dispatch) => {
-  dispatch({ type: ActionTypes.AUTH_LOADING });
-
-  try {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-
-    dispatch({ type: ActionTypes.AUTH_SIGNOUT });
-    dispatch({ type: ActionTypes.FAVORITES_CLEAR });
-  } catch (e) {
-    dispatch({
-      type: ActionTypes.AUTH_FAILED,
-      payload: e?.message ?? 'Logout failed',
-    });
-  }
-};
-
-export const fetchFavorites = () => async (dispatch) => {
+// =====================
+// FAVORITES (cần device header nếu bật RLS)
+// =====================
+export const fetchFavorites = (deviceIdParam) => async (dispatch) => {
   dispatch({ type: ActionTypes.FAVORITES_LOADING });
 
   try {
-    const { data, error } = await supabase
-      .from('favorites')
+    const deviceId = deviceIdParam ?? (await getDeviceId());
+    const sb = supabaseWithDevice(deviceId);
+
+    const { data, error } = await sb
+      .from('favorites_device')
       .select('city_id, cities:city_id ( id, name, country, lat, lon )')
+      .eq('device_id', deviceId)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
-    const cities = (data ?? []).map((row) => row.cities);
-    dispatch({
-      type: ActionTypes.FAVORITES_SUCCESS,
-      payload: cities,
-    });
+    const cities = (data ?? []).map((row) => row.cities).filter(Boolean);
+
+    dispatch({ type: ActionTypes.FAVORITES_SUCCESS, payload: cities });
   } catch (e) {
     dispatch({
       type: ActionTypes.FAVORITES_FAILED,
-      payload: e.message,
+      payload: e?.message ?? 'fetchFavorites failed',
     });
   }
 };
 
-
-export const toggleFavorite = (city) => async (dispatch) => {
+export const addFavorite = (cityId) => async (dispatch) => {
   try {
-    const { error } = await supabase.functions.invoke('favorites', {
-      body: { op: 'toggle', city_id: city.id },
-    });
+    const deviceId = await getDeviceId();
+    const sb = supabaseWithDevice(deviceId);
+
+    const { error } = await sb
+      .from('favorites_device')
+      .upsert(
+        { device_id: deviceId, city_id: cityId },
+        { onConflict: 'device_id,city_id' }
+      );
+
     if (error) throw error;
 
-    await dispatch(fetchFavorites());
+    await dispatch(fetchFavorites(deviceId));
   } catch (e) {
-    console.error('toggleFavorite failed:', e);
+    console.log('addFavorite failed:', e?.message ?? e);
+  }
+};
+
+export const removeFavorite = (cityId) => async (dispatch) => {
+  try {
+    const deviceId = await getDeviceId();
+    const sb = supabaseWithDevice(deviceId);
+
+    const { error } = await sb
+      .from('favorites_device')
+      .delete()
+      .eq('device_id', deviceId)
+      .eq('city_id', cityId);
+
+    if (error) throw error;
+
+    await dispatch(fetchFavorites(deviceId));
+  } catch (e) {
+    console.log('removeFavorite failed:', e?.message ?? e);
+  }
+};
+
+export const toggleFavorite = (city) => async (dispatch, getState) => {
+  try {
+    const currentFavs = getState()?.favorites?.list ?? [];
+    const exists = currentFavs.some((c) => c?.id === city?.id);
+
+    if (exists) {
+      await dispatch(removeFavorite(city.id));
+    } else {
+      await dispatch(addFavorite(city.id));
+    }
+  } catch (e) {
+    console.log('toggleFavorite failed:', e?.message ?? e);
   }
 };
