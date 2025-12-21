@@ -1,10 +1,11 @@
 import * as ActionTypes from './ActionTypes';
-import { supabase, supabaseWithDevice } from '../shared/supabaseClient';
-import { getDeviceId } from '../shared/deviceId'; // nếu file bạn là deviceid.js thì đổi thành '../shared/deviceid'
+import { supabase } from '../shared/supabaseClient';
+import { getDeviceId } from '../shared/deviceId';
+import * as Location from 'expo-location';
 
-// =====================
-// CITIES (không cần device header)
-// =====================
+/* =====================
+ * CITIES (Supabase)
+ * ===================== */
 export const fetchCities = () => async (dispatch) => {
   dispatch({ type: ActionTypes.CITIES_LOADING });
 
@@ -20,128 +21,221 @@ export const fetchCities = () => async (dispatch) => {
   dispatch({ type: ActionTypes.CITIES_SUCCESS, payload: data ?? [] });
 };
 
-export const selectCity = (city) => ({ type: ActionTypes.SELECT_CITY, payload: city });
+export const selectCity = (city) => ({
+  type: ActionTypes.SELECT_CITY,
+  payload: city,
+});
 
-// =====================
-// WEATHER (không cần device header)
-// =====================
+/* =====================
+ * WEATHER (Open-Meteo)
+ * ===================== */
 export const fetchForecast = (lat, lon) => async (dispatch) => {
-  dispatch({ type: ActionTypes.WEATHER_LOADING });
-
-  const { data, error } = await supabase.functions.invoke('forecast', {
-    body: { lat, lon },
-  });
-
-  if (error) {
-    return dispatch({ type: ActionTypes.WEATHER_FAILED, payload: error.message });
-  }
-
-  dispatch({ type: ActionTypes.WEATHER_SUCCESS, payload: data });
-};
-
-// =====================
-// ANONYMOUS USER INIT (cần device header nếu bật RLS)
-// =====================
-export const initAnonymousUser = () => async (dispatch) => {
   try {
-    const deviceId = await getDeviceId();
-    const sb = supabaseWithDevice(deviceId);
+    dispatch({ type: ActionTypes.WEATHER_LOADING });
 
-    // Upsert device_id lên bảng anonymous_users
-    const { error } = await sb
-      .from('anonymous_users')
-      .upsert({ device_id: deviceId }, { onConflict: 'device_id' });
+    if (lat == null || lon == null) throw new Error('Missing latitude/longitude');
 
-    if (error) {
-      console.log('upsert anonymous_users error:', error.message);
-      // vẫn tiếp tục, vì app vẫn có deviceId local
+    // 1) Forecast (weather) - thêm UV, wind direction, sunrise/sunset
+    const forecastParams = new URLSearchParams({
+      latitude: String(lat),
+      longitude: String(lon),
+
+      current: [
+        'temperature_2m',
+        'relative_humidity_2m',
+        'apparent_temperature',
+        'is_day',
+        'precipitation',
+        'rain',
+        'weather_code',
+        'wind_speed_10m',
+        'wind_direction_10m', // ✅ thêm hướng gió
+      ].join(','),
+
+      hourly: [
+        'temperature_2m',
+        'relative_humidity_2m',
+        'precipitation_probability',
+        'precipitation',
+        'weather_code',
+        'wind_speed_10m',
+        'wind_direction_10m',
+        'uv_index',
+        'is_day', 
+      ].join(','),
+
+      daily: [
+        'weather_code',
+        'temperature_2m_max',
+        'temperature_2m_min',
+        'sunrise',  // ✅
+        'sunset',   // ✅
+        'precipitation_probability_max',
+        'uv_index_max', // ✅ UV max trong ngày
+      ].join(','),
+
+      timezone: 'auto',
+    });
+
+    const forecastUrl = `https://api.open-meteo.com/v1/forecast?${forecastParams.toString()}`;
+
+    // 2) Air Quality - AQI thật
+    const airParams = new URLSearchParams({
+      latitude: String(lat),
+      longitude: String(lon),
+      current: [
+        'us_aqi',
+        'pm2_5',
+        'pm10',
+        'carbon_monoxide',
+        'nitrogen_dioxide',
+        'sulphur_dioxide',
+        'ozone',
+      ].join(','),
+      timezone: 'auto',
+    });
+
+    const airUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?${airParams.toString()}`;
+
+    // Fetch song song
+    const [forecastRes, airRes] = await Promise.all([fetch(forecastUrl), fetch(airUrl)]);
+
+    if (!forecastRes.ok) {
+      const txt = await forecastRes.text();
+      throw new Error(`Forecast API ${forecastRes.status}: ${txt}`);
+    }
+    if (!airRes.ok) {
+      const txt = await airRes.text();
+      throw new Error(`Air Quality API ${airRes.status}: ${txt}`);
     }
 
-    await dispatch(fetchFavorites(deviceId));
+    const forecastData = await forecastRes.json();
+    const airData = await airRes.json();
+
+    // ✅ Gộp lại vào 1 payload (UI vẫn dùng weather.data.current/hourly/daily như cũ)
+    dispatch({
+      type: ActionTypes.WEATHER_SUCCESS,
+      payload: {
+        ...forecastData,
+        air_quality: airData, // thêm field mới
+      },
+    });
   } catch (e) {
-    console.log('initAnonymousUser failed:', e?.message ?? e);
+    dispatch({ type: ActionTypes.WEATHER_FAILED, payload: e?.message ?? String(e) });
   }
 };
 
-// =====================
-// FAVORITES (cần device header nếu bật RLS)
-// =====================
-export const fetchFavorites = (deviceIdParam) => async (dispatch) => {
+/* =====================
+ * WEATHER by Device Location (App startup)
+ * ===================== */
+export const fetchForecastByDeviceLocation = () => async (dispatch) => {
+  try {
+    // xin quyền
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') throw new Error('Location permission not granted');
+
+    // lấy vị trí hiện tại
+    const loc = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced,
+    });
+
+    const lat = loc.coords.latitude;
+    const lon = loc.coords.longitude;
+
+    // reverse geocode -> lấy city name
+    let cityName = 'Current Location';
+    let country = '';
+
+    try {
+      const geos = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
+      const g = geos?.[0];
+      cityName = g?.city || g?.subregion || g?.region || 'Current Location';
+      country = g?.country || '';
+    } catch (e) {
+      // ignore reverse geocode fail
+    }
+
+    // ✅ QUAN TRỌNG: set selectedCity để header hiển thị tên
+    dispatch(
+      selectCity({
+        id: 'device-location', // id tạm
+        name: cityName,
+        country,
+        lat,
+        lon,
+      })
+    );
+
+    // fetch weather theo lat/lon
+    await dispatch(fetchForecast(lat, lon));
+  } catch (e) {
+    dispatch({ type: ActionTypes.WEATHER_FAILED, payload: e.message || String(e) });
+  }
+};
+
+/* =====================
+ * FAVORITES (Supabase + UUID)
+ * - favorites.list bạn đang dùng là list city object (HomeScreen check c.id)
+ * ===================== */
+export const fetchFavorites = () => async (dispatch) => {
   dispatch({ type: ActionTypes.FAVORITES_LOADING });
 
   try {
-    const deviceId = deviceIdParam ?? (await getDeviceId());
-    const sb = supabaseWithDevice(deviceId);
+    const device_id = await getDeviceId();
 
-    const { data, error } = await sb
-      .from('favorites_device')
-      .select('city_id, cities:city_id ( id, name, country, lat, lon )')
-      .eq('device_id', deviceId)
-      .order('created_at', { ascending: false });
+    // Lấy favorites + join cities (nếu bạn có foreign key favorites.city_id -> cities.id)
+    const { data, error } = await supabase
+      .from('favorites')
+      .select('city_id, cities ( id,name,country,lat,lon )')
+      .eq('device_id', device_id);
 
-    if (error) throw error;
+    if (error) {
+      return dispatch({ type: ActionTypes.FAVORITES_FAILED, payload: error.message });
+    }
 
-    const cities = (data ?? []).map((row) => row.cities).filter(Boolean);
+    // Trả list city objects
+    const cities = (data ?? [])
+      .map((row) => row.cities)
+      .filter(Boolean);
 
     dispatch({ type: ActionTypes.FAVORITES_SUCCESS, payload: cities });
   } catch (e) {
-    dispatch({
-      type: ActionTypes.FAVORITES_FAILED,
-      payload: e?.message ?? 'fetchFavorites failed',
-    });
+    dispatch({ type: ActionTypes.FAVORITES_FAILED, payload: e?.message ?? String(e) });
   }
 };
 
-export const addFavorite = (cityId) => async (dispatch) => {
-  try {
-    const deviceId = await getDeviceId();
-    const sb = supabaseWithDevice(deviceId);
-
-    const { error } = await sb
-      .from('favorites_device')
-      .upsert(
-        { device_id: deviceId, city_id: cityId },
-        { onConflict: 'device_id,city_id' }
-      );
-
-    if (error) throw error;
-
-    await dispatch(fetchFavorites(deviceId));
-  } catch (e) {
-    console.log('addFavorite failed:', e?.message ?? e);
-  }
-};
-
-export const removeFavorite = (cityId) => async (dispatch) => {
-  try {
-    const deviceId = await getDeviceId();
-    const sb = supabaseWithDevice(deviceId);
-
-    const { error } = await sb
-      .from('favorites_device')
-      .delete()
-      .eq('device_id', deviceId)
-      .eq('city_id', cityId);
-
-    if (error) throw error;
-
-    await dispatch(fetchFavorites(deviceId));
-  } catch (e) {
-    console.log('removeFavorite failed:', e?.message ?? e);
-  }
-};
-
+/**
+ * toggleFavorite(city)
+ */
 export const toggleFavorite = (city) => async (dispatch, getState) => {
   try {
-    const currentFavs = getState()?.favorites?.list ?? [];
-    const exists = currentFavs.some((c) => c?.id === city?.id);
+    const device_id = await getDeviceId();
+    const list = getState()?.favorites?.list ?? [];
+    const exists = list.some((c) => c?.id === city?.id);
 
     if (exists) {
-      await dispatch(removeFavorite(city.id));
+      // remove
+      const { error } = await supabase
+        .from('favorites')
+        .delete()
+        .eq('device_id', device_id)
+        .eq('city_id', city.id);
+
+      if (error) throw error;
+
+      dispatch({ type: ActionTypes.REMOVE_FAVORITE, payload: city.id });
     } else {
-      await dispatch(addFavorite(city.id));
+      // add
+      const { error } = await supabase
+        .from('favorites')
+        .insert({ device_id, city_id: city.id });
+
+      if (error) throw error;
+
+      dispatch({ type: ActionTypes.ADD_FAVORITE, payload: city });
     }
   } catch (e) {
-    console.log('toggleFavorite failed:', e?.message ?? e);
+    // Nếu bạn có toast/alert thì xử lý ở UI; ở đây cứ log để debug
+    console.log('toggleFavorite error:', e?.message ?? e);
   }
 };
