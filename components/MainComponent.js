@@ -1,48 +1,51 @@
 import React, { useEffect } from 'react';
-import { connect } from 'react-redux';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-
-import { bootstrapAuth } from '../redux/ActionCreators';
 
 import HomeScreen from '../screens/HomeScreen';
 import WeatherListScreen from '../screens/WeatherListScreen';
 import FavoritesScreen from '../screens/FavoritesScreen';
-import LoginScreen from '../screens/LoginScreen';
-import SignupScreen from '../screens/SignupScreen';
+
+import { getDeviceId } from '../shared/deviceId';
+import { supabase } from '../shared/supabaseClient';
 
 const Stack = createNativeStackNavigator();
+  function Main() {
+useEffect(() => {
+  (async () => {
+    try {
+      const id = await getDeviceId();
+      console.log('App DEVICE_ID:', id);
 
-function Main({ auth, bootstrapAuth }) {
-  useEffect(() => {
-    bootstrapAuth();
-  }, [bootstrapAuth]);
+      const { data, error } = await supabase
+        .from('anonymous_users')
+        .upsert({ device_id: id }, { onConflict: 'device_id' })
+        .select();
 
-  const isAuthed = !!auth?.session;
+      if (error) {
+        console.log('Upsert anonymous_users error:', error);
+      } else {
+        console.log('Upsert OK:', data);
+      }
+    } catch (e) {
+      console.log('init anonymous user failed:', e);
+    }
+  })();
+}, []);
 
-  return (
-    <NavigationContainer>
-      <Stack.Navigator
-        key={isAuthed ? 'app' : 'auth'}
-        screenOptions={{ headerShown: false }}
-        initialRouteName={isAuthed ? 'Home' : 'Login'}
-      >
-        {!isAuthed ? (
-          <>
-            <Stack.Screen name="Login" component={LoginScreen} />
-            <Stack.Screen name="Signup" component={SignupScreen} />
-          </>
-        ) : (
-          <>
-            <Stack.Screen name="Home" component={HomeScreen} />
-            <Stack.Screen name="CitySearch" component={WeatherListScreen} />
-            <Stack.Screen name="Favorites" component={FavoritesScreen} />
-          </>
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
-  );
+return (
+  <NavigationContainer>
+    <Stack.Navigator
+      screenOptions={{ headerShown: false }}
+      initialRouteName="Home"
+    >
+      <Stack.Screen name="Home" component={HomeScreen} />
+      <Stack.Screen name="CitySearch" component={WeatherListScreen} />
+      <Stack.Screen name="Favorites" component={FavoritesScreen} />
+    </Stack.Navigator>
+  </NavigationContainer>
+);
 }
 
-const mapStateToProps = (state) => ({ auth: state.auth });
-export default connect(mapStateToProps, { bootstrapAuth })(Main);
+export default Main;
+

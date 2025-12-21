@@ -18,8 +18,3 @@ export const REMOVE_FAVORITE   = 'REMOVE_FAVORITE';
 export const FAVORITES_CLEAR = "FAVORITES_CLEAR";
 
 
-// Auth
-export const AUTH_LOADING = 'AUTH_LOADING';
-export const AUTH_SUCCESS = 'AUTH_SUCCESS';
-export const AUTH_FAILED  = 'AUTH_FAILED';
-export const AUTH_SIGNOUT  = 'AUTH_SIGNOUT'; 
