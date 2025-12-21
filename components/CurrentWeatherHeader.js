@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
+import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
 
 export default function CurrentWeatherHeader({
   cityName,
@@ -8,16 +8,26 @@ export default function CurrentWeatherHeader({
   currentUnits,
   isLoading,
   error,
+  onChooseCityPress,
 }) {
-  const title = cityName ? `${cityName}${country ? `, ${country}` : ''}` : 'Choose a city';
-
   const temp = current?.temperature_2m;
   const unit = currentUnits?.temperature_2m || '°C';
+
+  const cityLine =
+    cityName ? `${cityName}${country ? `, ${country}` : ''}` : null;
 
   return (
     <View style={styles.headerBackground}>
       <View style={styles.headerContent}>
-        <Text style={styles.cityText}>{title}</Text>
+        <TouchableOpacity
+          onPress={onChooseCityPress}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.chooseText}>Choose a city</Text>
+        </TouchableOpacity>
+
+        {cityLine ? <Text style={styles.cityText}>{cityLine}</Text> : null}
+        
 
         {isLoading ? (
           <Text style={styles.conditionText}>Loading...</Text>
@@ -49,15 +59,26 @@ const styles = StyleSheet.create({
   headerContent: {
     alignItems: 'center',
   },
-  cityText: {
+
+  chooseText: {
     color: '#FFFFFF',
     fontSize: 26,
     fontWeight: '600',
+    marginTop: 2,
   },
+
+  cityText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 10,
+  },
+
   mainTemp: {
     color: '#FFFFFF',
     fontSize: 64,
     fontWeight: '200',
+    marginTop: 10,
   },
   conditionText: {
     color: '#FFFFFF',
@@ -76,4 +97,3 @@ const styles = StyleSheet.create({
     marginTop: 40,
   },
 });
-

@@ -10,42 +10,44 @@ import { getDeviceId } from '../shared/deviceId';
 import { supabase } from '../shared/supabaseClient';
 
 const Stack = createNativeStackNavigator();
-  function Main() {
-useEffect(() => {
-  (async () => {
-    try {
-      const id = await getDeviceId();
-      console.log('App DEVICE_ID:', id);
 
-      const { data, error } = await supabase
-        .from('anonymous_users')
-        .upsert({ device_id: id }, { onConflict: 'device_id' })
-        .select();
+function Main() {
+  useEffect(() => {
+    (async () => {
+      try {
+        const id = await getDeviceId();
+        console.log('App DEVICE_ID:', id);
 
-      if (error) {
-        console.log('Upsert anonymous_users error:', error);
-      } else {
-        console.log('Upsert OK:', data);
+        const { error } = await supabase
+          .from('anonymous_users')
+          .upsert(
+            {
+              device_id: id,
+              last_seen_at: new Date().toISOString(),
+            },
+            { onConflict: 'device_id' }
+          );
+
+        if (error) {
+          console.log('Upsert anonymous_users error:', error);
+        } else {
+          console.log('Upsert anonymous_users OK');
+        }
+      } catch (e) {
+        console.log('init anonymous user failed:', e);
       }
-    } catch (e) {
-      console.log('init anonymous user failed:', e);
-    }
-  })();
-}, []);
+    })();
+  }, []);
 
-return (
-  <NavigationContainer>
-    <Stack.Navigator
-      screenOptions={{ headerShown: false }}
-      initialRouteName="Home"
-    >
-      <Stack.Screen name="Home" component={HomeScreen} />
-      <Stack.Screen name="CitySearch" component={WeatherListScreen} />
-      <Stack.Screen name="Favorites" component={FavoritesScreen} />
-    </Stack.Navigator>
-  </NavigationContainer>
-);
+  return (
+    <NavigationContainer>
+      <Stack.Navigator screenOptions={{ headerShown: false }} initialRouteName="Home">
+        <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen name="CitySearch" component={WeatherListScreen} />
+        <Stack.Screen name="Favorites" component={FavoritesScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
 }
 
 export default Main;
-
