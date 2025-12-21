@@ -1,10 +1,12 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { connect } from 'react-redux';
+
 import {
   fetchForecast,
   fetchForecastByDeviceLocation,
   selectCity,
   toggleFavorite,
+  fetchFavorites,
 } from '../redux/ActionCreators';
 
 import { StatusBar } from 'expo-status-bar';
@@ -27,6 +29,8 @@ import BottomNav from '../components/BottomNav';
 
 import { MaterialIcons } from '@expo/vector-icons';
 
+const isGeoId = (id) => typeof id === 'string' && id.startsWith('geo:');
+
 function HomeScreen({
   navigation,
   selectedCity,
@@ -35,8 +39,12 @@ function HomeScreen({
   fetchForecastByDeviceLocation,
   favorites,
   toggleFavorite,
-  selectCity,
+  fetchFavorites,
 }) {
+  useEffect(() => {
+    fetchFavorites();
+  }, [fetchFavorites]);
+
   useEffect(() => {
     if (selectedCity?.lat != null && selectedCity?.lon != null) {
       fetchForecast(selectedCity.lat, selectedCity.lon);
@@ -46,8 +54,34 @@ function HomeScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCity]);
 
-  const isFavorite = !!favorites?.some((c) => c?.id === selectedCity?.id);
   const [locking, setLocking] = useState(false);
+
+  // ✅ Chuẩn hóa city dùng cho favorite (geo:xxx => id null)
+  const fixedCityForFav = useMemo(() => {
+    if (!selectedCity) return null;
+    if (isGeoId(selectedCity.id)) return { ...selectedCity, id: null };
+    return selectedCity;
+  }, [selectedCity]);
+
+  // ✅ isFavorite: nếu city có UUID thì match theo id, nếu current location thì match theo lat/lon
+  const isFavorite = useMemo(() => {
+    if (!fixedCityForFav) return false;
+
+    // case city UUID
+    if (fixedCityForFav.id) {
+      return (favorites ?? []).some((c) => c?.id === fixedCityForFav.id);
+    }
+
+    // case current location: match theo lat/lon (4 decimals)
+    const keyLat = Number(Number(fixedCityForFav.lat).toFixed(4));
+    const keyLon = Number(Number(fixedCityForFav.lon).toFixed(4));
+
+    return (favorites ?? []).some((c) => {
+      const clat = Number(Number(c?.lat).toFixed(4));
+      const clon = Number(Number(c?.lon).toFixed(4));
+      return clat === keyLat && clon === keyLon;
+    });
+  }, [fixedCityForFav, favorites]);
 
   const sheetRef = useRef(null);
   const snapPoints = ['50%', '89%'];
@@ -73,21 +107,29 @@ function HomeScreen({
               showsVerticalScrollIndicator={false}
             >
               <CurrentWeatherHeader
-              cityName={selectedCity?.name}
-              country={selectedCity?.country}
-              isLoading={weather.isLoading}
-              error={weather.errMess}
-              current={weather.data?.current}
-              currentUnits={weather.data?.current_units}
-              onChooseCityPress={() => navigation.navigate('Favorites', { pickMode: true })}
-            />
-              {selectedCity && (
+                cityName={selectedCity?.name}
+                country={selectedCity?.country}
+                isLoading={weather.isLoading}
+                error={weather.errMess}
+                current={weather.data?.current}
+                currentUnits={weather.data?.current_units}
+                onChooseCityPress={() => navigation.navigate('Favorites', { pickMode: true })}
+              />
+
+              {/* ✅ Heart always show */}
+              {!!fixedCityForFav && (
                 <TouchableOpacity
-                  disabled={isFavorite || locking}
+                  disabled={locking}
                   onPress={async () => {
-                    if (locking || isFavorite) return;
+                    if (locking) return;
                     setLocking(true);
-                    await toggleFavorite(selectedCity);
+
+                    // ✅ quan trọng: dùng fixedCityForFav (geo => null)
+                    await toggleFavorite(fixedCityForFav);
+
+                    // ✅ reload favorites để UI đổi tim + Favorites list
+                    await fetchFavorites();
+
                     setLocking(false);
                   }}
                   style={{
@@ -98,7 +140,7 @@ function HomeScreen({
                     backgroundColor: '#342561',
                     padding: 12,
                     borderRadius: 20,
-                    opacity: isFavorite || locking ? 0.5 : 1,
+                    opacity: locking ? 0.5 : 1,
                   }}
                 >
                   <MaterialIcons
@@ -148,7 +190,7 @@ function HomeScreen({
 const styles = StyleSheet.create({
   appBackground: { flex: 1 },
   safeArea: { flex: 1, backgroundColor: 'transparent' },
-  root: { flex: 1, paddingTop: 0 },
+  root: { flex: 1 },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 40 },
   bottomSheetBackground: {
@@ -161,7 +203,6 @@ const styles = StyleSheet.create({
 });
 
 const mapStateToProps = (state) => ({
-  cities: state.cities, 
   selectedCity: state.cities.selected,
   weather: state.weather,
   favorites: state.favorites.list,
@@ -172,6 +213,7 @@ const mapDispatchToProps = {
   fetchForecastByDeviceLocation,
   toggleFavorite,
   selectCity,
+  fetchFavorites,
 };
 
 export default connect(mapStateToProps, mapDispatchToProps)(HomeScreen);

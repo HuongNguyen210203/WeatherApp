@@ -17,7 +17,7 @@ export const supabase = createClient(SUPABASE_URL ?? '', SUPABASE_ANON_KEY ?? ''
   },
 });
 
-// Client có gắn header x-device-id (dùng cho favorites + anonymous_users)
+// Client có gắn header x-device-id
 export const supabaseWithDevice = (deviceId) =>
   createClient(SUPABASE_URL ?? '', SUPABASE_ANON_KEY ?? '', {
     global: {

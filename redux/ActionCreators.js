@@ -1,10 +1,26 @@
 import * as ActionTypes from './ActionTypes';
-import { supabase } from '../shared/supabaseClient';
+import { supabase, supabaseWithDevice } from '../shared/supabaseClient';
 import { getDeviceId } from '../shared/deviceId';
 import * as Location from 'expo-location';
 
 /* =====================
- * CITIES (Supabase)
+ * Helpers
+ * ===================== */
+const isUuid = (v) =>
+  typeof v === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+
+const roundCoord = (n, p = 4) => Number(Number(n).toFixed(p));
+
+const mergeWeatherWithAQ = (forecastJson, aqJson) => {
+  return {
+    ...(forecastJson ?? {}),
+    air_quality: aqJson ?? null,
+  };
+};
+
+/* =====================
+ * CITIES
  * ===================== */
 export const fetchCities = () => async (dispatch) => {
   dispatch({ type: ActionTypes.CITIES_LOADING });
@@ -21,13 +37,27 @@ export const fetchCities = () => async (dispatch) => {
   dispatch({ type: ActionTypes.CITIES_SUCCESS, payload: data ?? [] });
 };
 
-export const selectCity = (city) => ({
-  type: ActionTypes.SELECT_CITY,
-  payload: city,
-});
+export const selectCity = (city) => ({ type: ActionTypes.SELECT_CITY, payload: city });
 
 /* =====================
- * WEATHER (Open-Meteo)
+ * AIR QUALITY (Open-Meteo)
+ * ===================== */
+export const fetchAirQuality = async (lat, lon) => {
+  const params = new URLSearchParams({
+    latitude: String(lat),
+    longitude: String(lon),
+    timezone: 'auto',
+    current: 'us_aqi,pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,ozone,sulphur_dioxide',
+  });
+
+  const url = `https://air-quality-api.open-meteo.com/v1/air-quality?${params.toString()}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Air Quality API error: ${res.status}`);
+  return res.json();
+};
+
+/* =====================
+ * WEATHER (Forecast + AQ)
  * ===================== */
 export const fetchForecast = (lat, lon) => async (dispatch) => {
   try {
@@ -35,169 +65,100 @@ export const fetchForecast = (lat, lon) => async (dispatch) => {
 
     if (lat == null || lon == null) throw new Error('Missing latitude/longitude');
 
-    // 1) Forecast (weather) - thêm UV, wind direction, sunrise/sunset
-    const forecastParams = new URLSearchParams({
+    const params = new URLSearchParams({
       latitude: String(lat),
       longitude: String(lon),
-
-      current: [
-        'temperature_2m',
-        'relative_humidity_2m',
-        'apparent_temperature',
-        'is_day',
-        'precipitation',
-        'rain',
-        'weather_code',
-        'wind_speed_10m',
-        'wind_direction_10m', // ✅ thêm hướng gió
-      ].join(','),
-
-      hourly: [
-        'temperature_2m',
-        'relative_humidity_2m',
-        'precipitation_probability',
-        'precipitation',
-        'weather_code',
-        'wind_speed_10m',
-        'wind_direction_10m',
-        'uv_index',
-        'is_day', 
-      ].join(','),
-
-      daily: [
-        'weather_code',
-        'temperature_2m_max',
-        'temperature_2m_min',
-        'sunrise',  // ✅
-        'sunset',   // ✅
-        'precipitation_probability_max',
-        'uv_index_max', // ✅ UV max trong ngày
-      ].join(','),
-
       timezone: 'auto',
+      current:
+        'temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,is_day,wind_speed_10m,wind_direction_10m',
+      hourly:
+        'temperature_2m,relative_humidity_2m,apparent_temperature,precipitation_probability,precipitation,weather_code,is_day,wind_speed_10m,wind_direction_10m,uv_index',
+      daily:
+        'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max,wind_direction_10m_dominant,uv_index_max,sunrise,sunset',
     });
 
-    const forecastUrl = `https://api.open-meteo.com/v1/forecast?${forecastParams.toString()}`;
+    const url = `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
 
-    // 2) Air Quality - AQI thật
-    const airParams = new URLSearchParams({
-      latitude: String(lat),
-      longitude: String(lon),
-      current: [
-        'us_aqi',
-        'pm2_5',
-        'pm10',
-        'carbon_monoxide',
-        'nitrogen_dioxide',
-        'sulphur_dioxide',
-        'ozone',
-      ].join(','),
-      timezone: 'auto',
-    });
+    const [forecastRes, aqJson] = await Promise.all([
+      fetch(url),
+      fetchAirQuality(lat, lon).catch(() => null),
+    ]);
 
-    const airUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?${airParams.toString()}`;
+    if (!forecastRes.ok) throw new Error(`Open-Meteo error: ${forecastRes.status}`);
 
-    // Fetch song song
-    const [forecastRes, airRes] = await Promise.all([fetch(forecastUrl), fetch(airUrl)]);
+    const forecastJson = await forecastRes.json();
+    const merged = mergeWeatherWithAQ(forecastJson, aqJson);
 
-    if (!forecastRes.ok) {
-      const txt = await forecastRes.text();
-      throw new Error(`Forecast API ${forecastRes.status}: ${txt}`);
-    }
-    if (!airRes.ok) {
-      const txt = await airRes.text();
-      throw new Error(`Air Quality API ${airRes.status}: ${txt}`);
-    }
-
-    const forecastData = await forecastRes.json();
-    const airData = await airRes.json();
-
-    // ✅ Gộp lại vào 1 payload (UI vẫn dùng weather.data.current/hourly/daily như cũ)
-    dispatch({
-      type: ActionTypes.WEATHER_SUCCESS,
-      payload: {
-        ...forecastData,
-        air_quality: airData, // thêm field mới
-      },
-    });
+    dispatch({ type: ActionTypes.WEATHER_SUCCESS, payload: merged });
   } catch (e) {
     dispatch({ type: ActionTypes.WEATHER_FAILED, payload: e?.message ?? String(e) });
   }
 };
 
 /* =====================
- * WEATHER by Device Location (App startup)
+ * WEATHER by device location + reverse geocode
  * ===================== */
 export const fetchForecastByDeviceLocation = () => async (dispatch) => {
   try {
-    // xin quyền
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') throw new Error('Location permission not granted');
 
-    // lấy vị trí hiện tại
     const loc = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.Balanced,
     });
 
-    const lat = loc.coords.latitude;
-    const lon = loc.coords.longitude;
+    const lat = loc?.coords?.latitude;
+    const lon = loc?.coords?.longitude;
+    if (lat == null || lon == null) throw new Error('Cannot read device location');
 
-    // reverse geocode -> lấy city name
-    let cityName = 'Current Location';
+    // reverse geocode
+    let name = 'Current location';
     let country = '';
-
     try {
-      const geos = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
-      const g = geos?.[0];
-      cityName = g?.city || g?.subregion || g?.region || 'Current Location';
-      country = g?.country || '';
-    } catch (e) {
-      // ignore reverse geocode fail
-    }
+      const arr = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lon });
+      const p = arr?.[0];
+      name = p?.city || p?.subregion || p?.region || p?.district || 'Current location';
+      country = p?.countryCode || p?.country || '';
+    } catch {}
 
-    // ✅ QUAN TRỌNG: set selectedCity để header hiển thị tên
+    // ✅ chú ý: KHÔNG set id="geo:..." nữa, để null cho sạch
     dispatch(
       selectCity({
-        id: 'device-location', // id tạm
-        name: cityName,
+        id: null,
+        name,
         country,
         lat,
         lon,
+        source: 'device',
       })
     );
 
-    // fetch weather theo lat/lon
     await dispatch(fetchForecast(lat, lon));
   } catch (e) {
-    dispatch({ type: ActionTypes.WEATHER_FAILED, payload: e.message || String(e) });
+    dispatch({ type: ActionTypes.WEATHER_FAILED, payload: e?.message ?? String(e) });
   }
 };
 
 /* =====================
- * FAVORITES (Supabase + UUID)
- * - favorites.list bạn đang dùng là list city object (HomeScreen check c.id)
+ * FAVORITES (favorites_device)
  * ===================== */
 export const fetchFavorites = () => async (dispatch) => {
   dispatch({ type: ActionTypes.FAVORITES_LOADING });
 
   try {
     const device_id = await getDeviceId();
+    const client = supabaseWithDevice(device_id);
 
-    // Lấy favorites + join cities (nếu bạn có foreign key favorites.city_id -> cities.id)
-    const { data, error } = await supabase
-      .from('favorites')
-      .select('city_id, cities ( id,name,country,lat,lon )')
+    const { data, error } = await client
+      .from('favorites_device')
+      .select('city_id, cities:city_id ( id,name,country,lat,lon )')
       .eq('device_id', device_id);
 
     if (error) {
       return dispatch({ type: ActionTypes.FAVORITES_FAILED, payload: error.message });
     }
 
-    // Trả list city objects
-    const cities = (data ?? [])
-      .map((row) => row.cities)
-      .filter(Boolean);
-
+    const cities = (data ?? []).map((row) => row.cities).filter(Boolean);
     dispatch({ type: ActionTypes.FAVORITES_SUCCESS, payload: cities });
   } catch (e) {
     dispatch({ type: ActionTypes.FAVORITES_FAILED, payload: e?.message ?? String(e) });
@@ -205,37 +166,129 @@ export const fetchFavorites = () => async (dispatch) => {
 };
 
 /**
- * toggleFavorite(city)
+ * ✅ Đảm bảo có city UUID.
+ * - Nếu city.id là UUID => dùng luôn
+ * - Nếu city.id là "geo:..." hoặc null => coi như không có id, dùng lat/lon để tìm hoặc insert vào cities
  */
+const ensureCityUuid = async (city) => {
+  // ✅ CHỈ chấp nhận UUID. "geo:xxxx" sẽ không qua được.
+  if (isUuid(city?.id)) return city;
+
+  const lat = city?.lat;
+  const lon = city?.lon;
+  if (lat == null || lon == null) throw new Error('Missing lat/lon for city');
+
+  const payload = {
+    name: city?.name ?? 'Current location',
+    country: city?.country ?? '',
+    lat: roundCoord(lat, 4),
+    lon: roundCoord(lon, 4),
+  };
+
+  // 1) SELECT trước theo vùng sai số (tránh float mismatch)
+  const EPS = 0.0002; // ~20m
+  const { data: foundFirst, error: selErr1 } = await supabase
+    .from('cities')
+    .select('id,name,country,lat,lon')
+    .gte('lat', payload.lat - EPS)
+    .lte('lat', payload.lat + EPS)
+    .gte('lon', payload.lon - EPS)
+    .lte('lon', payload.lon + EPS)
+    .limit(1)
+    .maybeSingle();
+
+  if (selErr1) throw selErr1;
+  if (foundFirst?.id) return foundFirst;
+
+  // 2) INSERT nếu chưa có
+  const { data: inserted, error: insErr } = await supabase
+    .from('cities')
+    .insert(payload)
+    .select('id,name,country,lat,lon')
+    .maybeSingle();
+
+  if (!insErr && inserted?.id) return inserted;
+
+  // 3) INSERT fail (trùng/rls/...) -> SELECT lại
+  const { data: foundAgain, error: selErr2 } = await supabase
+    .from('cities')
+    .select('id,name,country,lat,lon')
+    .gte('lat', payload.lat - EPS)
+    .lte('lat', payload.lat + EPS)
+    .gte('lon', payload.lon - EPS)
+    .lte('lon', payload.lon + EPS)
+    .limit(1)
+    .maybeSingle();
+
+  if (selErr2) throw selErr2;
+  if (foundAgain?.id) return foundAgain;
+
+  if (insErr) throw new Error(`Insert cities failed: ${insErr.message}`);
+  throw new Error('Cannot create/find city id for current location');
+};
+
 export const toggleFavorite = (city) => async (dispatch, getState) => {
   try {
+    console.log('toggleFavorite city.id=', city?.id, 'lat=', city?.lat, 'lon=', city?.lon);
+
     const device_id = await getDeviceId();
+    const client = supabaseWithDevice(device_id);
+
+    // ✅ luôn đảm bảo uuid hợp lệ
+    const ensuredCity = await ensureCityUuid(city);
+
     const list = getState()?.favorites?.list ?? [];
-    const exists = list.some((c) => c?.id === city?.id);
+    const exists = list.some((c) => c?.id === ensuredCity?.id);
 
     if (exists) {
-      // remove
-      const { error } = await supabase
-        .from('favorites')
+      const { error } = await client
+        .from('favorites_device')
         .delete()
         .eq('device_id', device_id)
-        .eq('city_id', city.id);
+        .eq('city_id', ensuredCity.id);
 
       if (error) throw error;
 
-      dispatch({ type: ActionTypes.REMOVE_FAVORITE, payload: city.id });
+      dispatch({ type: ActionTypes.REMOVE_FAVORITE, payload: ensuredCity.id });
     } else {
-      // add
-      const { error } = await supabase
-        .from('favorites')
-        .insert({ device_id, city_id: city.id });
+      const { data, error } = await client
+        .from('favorites_device')
+        .upsert(
+          { device_id, city_id: ensuredCity.id },
+          { onConflict: 'device_id,city_id' }
+        )
+        .select();
 
+      console.log('favorites_device upsert data:', data);
       if (error) throw error;
 
-      dispatch({ type: ActionTypes.ADD_FAVORITE, payload: city });
+      dispatch({ type: ActionTypes.ADD_FAVORITE, payload: ensuredCity });
     }
   } catch (e) {
-    // Nếu bạn có toast/alert thì xử lý ở UI; ở đây cứ log để debug
     console.log('toggleFavorite error:', e?.message ?? e);
   }
 };
+
+export const removeFavorite = (cityId) => async (dispatch) => {
+  try {
+    const device_id = await getDeviceId();
+    const client = supabaseWithDevice(device_id);
+
+    const { error } = await client
+      .from('favorites_device')
+      .delete()
+      .eq('device_id', device_id)
+      .eq('city_id', cityId)
+      .select();
+
+      console.log('favorites_device delete data:', data); 
+
+    if (error) throw error;
+
+    dispatch({ type: ActionTypes.REMOVE_FAVORITE, payload: cityId });
+  } catch (e) {
+    console.log('removeFavorite error:', e?.message ?? e);
+  }
+};
+
+export const clearFavorites = () => ({ type: ActionTypes.FAVORITES_CLEAR });
