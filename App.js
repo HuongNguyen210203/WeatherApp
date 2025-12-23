@@ -1,23 +1,4 @@
-// import React, { useState } from 'react';
-// import { GestureHandlerRootView } from 'react-native-gesture-handler';
-// import HomeScreen from './screens/HomeScreen';
-// import WeatherListScreen from './screens/WeatherListScreen';
-
-// export default function App() {
-//   const [currentScreen, setCurrentScreen] = useState('home'); // 'home' or 'weatherList'
-
-//   if (currentScreen === 'weatherList') {
-//     return (
-//       <GestureHandlerRootView style={{ flex: 1 }}>
-//         <WeatherListScreen onBack={() => setCurrentScreen('home')} />
-//       </GestureHandlerRootView>
-//     );
-//   }
-
-//   return (
-//     <HomeScreen onNavigateToWeatherList={() => setCurrentScreen('weatherList')} />
-//   );
-// }
+import { LogBox } from 'react-native';
 import React from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Provider } from 'react-redux';
@@ -25,6 +6,13 @@ import Main from './components/MainComponent';
 import { ConfigureStore } from './redux/ConfigureStore';
 
 const store = ConfigureStore();
+
+
+LogBox.ignoreLogs([
+  'expo-notifications: Android Push notifications',
+  '`expo-notifications` functionality is not fully supported in Expo Go',
+]);
+
 
 export default function App() {
   return (

@@ -1,3 +1,5 @@
 {
-  "imports": {}
+  "imports": {
+    "@std/http": "jsr:@std/http@1"
+  }
 }

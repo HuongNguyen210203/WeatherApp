@@ -112,6 +112,9 @@ function FavoritesScreen({
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            q.trim().length > 0 ? <Text style={styles.emptyText}>No results.</Text> : null
+          }
         />
       </SafeAreaView>
     </ImageBackground>
@@ -127,7 +130,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 18,
     backgroundColor: 'rgba(52, 37, 97, 0.7)',
-    paddingTop: 6, // ✅ hạ xuống thêm chút (đỡ dính status bar)
+    paddingTop: 6, // hạ xuống thêm chút (đỡ dính status bar)
     paddingBottom: 10,
   },
   iconBtn: {
@@ -166,14 +169,20 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
   },
-
   listContent: {
-    paddingHorizontal: 18,
-    paddingTop: 14,
-    paddingBottom: 24,
-    gap: 14,
+  flexGrow: 1,
+  paddingHorizontal: 18,
+  paddingTop: 14,
+  paddingBottom: 24,
+  gap: 14,
+  justifyContent: 'flex-start',
+},
+  emptyText: {
+    color: '#A39AD5',
+    textAlign: 'center',
+    fontSize: 16,
+    opacity: 0.9,
   },
-
   card: {
     backgroundColor: 'rgba(52, 37, 97, 0.85)',
     borderRadius: 22,

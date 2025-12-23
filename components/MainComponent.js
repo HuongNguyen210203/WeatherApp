@@ -11,12 +11,25 @@ import { getDeviceId } from '../shared/deviceId';
 import { supabaseWithDevice } from '../shared/supabaseClient';
 import { fetchFavorites } from '../redux/ActionCreators';
 
+import { ensureNotifPermission } from '../shared/notify';
+import { registerWeatherAlertsTask } from '../shared/backgroundWeatherTask';
+import { View } from 'react-native';
+
+
+
+
 const Stack = createNativeStackNavigator();
+const FALLBACK_BG = '#313660';
 
 const MyTheme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
+    background: FALLBACK_BG,
+    card: FALLBACK_BG,
+    // (optional) để đồng bộ
+    border: 'transparent',
+    text: '#FFFFFF',
   },
 };
 
@@ -25,6 +38,12 @@ function Main({ fetchFavorites }) {
     let mounted = true;
 
     (async () => {
+      try {
+        await ensureNotifPermission();
+        await registerWeatherAlertsTask();
+      } catch (e) {
+        console.log('notif init failed:', e?.message ?? e);
+      }
       try {
         const id = await getDeviceId();
         if (!mounted) return;
@@ -57,39 +76,42 @@ function Main({ fetchFavorites }) {
   }, [fetchFavorites]);
 
   return (
-    <NavigationContainer theme={MyTheme}>
-      <Stack.Navigator
-        initialRouteName="Home"
-        screenOptions={{
-          headerShown: false,
-          // animation mặc định cho các màn dạng push
-          animation: 'slide_from_right',
-          animationDuration: 240,
-          contentStyle: { backgroundColor: '#0B0B1A' },
-        }}
-      >
-        <Stack.Screen name="Home" component={HomeScreen} />
-        <Stack.Screen
-          name="CitySearch"
-          component={WeatherListScreen}
-          options={{
-            presentation: 'modal',
-            animation: 'slide_from_bottom',
-            animationDuration: 260,
-          }}
-        />
-
-        <Stack.Screen 
-          name="Favorites" 
-          component={FavoritesScreen}
-          options={{
+    <View style={{ flex: 1, backgroundColor: FALLBACK_BG }}>
+      <NavigationContainer theme={MyTheme}>
+        <Stack.Navigator
+          initialRouteName="Home"
+          screenOptions={{
+            headerShown: false,
+            // animation mặc định cho các màn dạng push
             animation: 'slide_from_right',
             animationDuration: 240,
+            contentStyle: { backgroundColor: FALLBACK_BG },
           }}
-        />
-      </Stack.Navigator>
-    </NavigationContainer>
+        >
+          <Stack.Screen name="Home" component={HomeScreen} />
+          <Stack.Screen
+            name="CitySearch"
+            component={WeatherListScreen}
+            options={{
+              presentation: 'modal',
+              animation: 'slide_from_bottom',
+              animationDuration: 260,
+            }}
+          />
+
+          <Stack.Screen 
+            name="Favorites" 
+            component={FavoritesScreen}
+            options={{
+              animation: 'slide_from_right',
+              animationDuration: 240,
+            }}
+          />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </View>
   );
 }
+
 
 export default connect(null, { fetchFavorites })(Main);

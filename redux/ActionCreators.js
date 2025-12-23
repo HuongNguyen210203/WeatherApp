@@ -3,9 +3,11 @@ import { supabase, supabaseWithDevice } from '../shared/supabaseClient';
 import { getDeviceId } from '../shared/deviceId';
 import * as Location from 'expo-location';
 
-/* =====================
- * Helpers
- * ===================== */
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { FAVORITES_CACHE_KEY } from '../shared/backgroundWeatherTask';
+
+
+//helpers
 const isUuid = (v) =>
   typeof v === 'string' &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
@@ -18,10 +20,7 @@ const mergeWeatherWithAQ = (forecastJson, aqJson) => {
     air_quality: aqJson ?? null,
   };
 };
-
-/* =====================
- * CITIES
- * ===================== */
+//cities
 export const fetchCities = () => async (dispatch) => {
   dispatch({ type: ActionTypes.CITIES_LOADING });
 
@@ -39,9 +38,7 @@ export const fetchCities = () => async (dispatch) => {
 
 export const selectCity = (city) => ({ type: ActionTypes.SELECT_CITY, payload: city });
 
-/* =====================
- * AIR QUALITY (Open-Meteo)
- * ===================== */
+//air quality open meteo
 export const fetchAirQuality = async (lat, lon) => {
   const params = new URLSearchParams({
     latitude: String(lat),
@@ -56,9 +53,7 @@ export const fetchAirQuality = async (lat, lon) => {
   return res.json();
 };
 
-/* =====================
- * WEATHER (Forecast + AQ)
- * ===================== */
+//weather forecast
 export const fetchForecast = (lat, lon) => async (dispatch) => {
   try {
     dispatch({ type: ActionTypes.WEATHER_LOADING });
@@ -95,9 +90,7 @@ export const fetchForecast = (lat, lon) => async (dispatch) => {
   }
 };
 
-/* =====================
- * WEATHER by device location + reverse geocode
- * ===================== */
+//weather forecast by device location
 export const fetchForecastByDeviceLocation = () => async (dispatch) => {
   try {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -121,27 +114,30 @@ export const fetchForecastByDeviceLocation = () => async (dispatch) => {
       country = p?.countryCode || p?.country || '';
     } catch {}
 
-    // ✅ chú ý: KHÔNG set id="geo:..." nữa, để null cho sạch
+    
+    const cityWithUuid = await ensureCityUuid({
+      id: null,
+      name,
+      country,
+      lat,
+      lon,
+    });
+
     dispatch(
       selectCity({
-        id: null,
-        name,
-        country,
-        lat,
-        lon,
+        ...cityWithUuid,
         source: 'device',
       })
     );
 
     await dispatch(fetchForecast(lat, lon));
+
   } catch (e) {
     dispatch({ type: ActionTypes.WEATHER_FAILED, payload: e?.message ?? String(e) });
   }
 };
 
-/* =====================
- * FAVORITES (favorites_device)
- * ===================== */
+//fav device
 export const fetchFavorites = () => async (dispatch) => {
   dispatch({ type: ActionTypes.FAVORITES_LOADING });
 
@@ -160,18 +156,15 @@ export const fetchFavorites = () => async (dispatch) => {
 
     const cities = (data ?? []).map((row) => row.cities).filter(Boolean);
     dispatch({ type: ActionTypes.FAVORITES_SUCCESS, payload: cities });
+    await AsyncStorage.setItem(FAVORITES_CACHE_KEY, JSON.stringify(cities ?? []));
   } catch (e) {
     dispatch({ type: ActionTypes.FAVORITES_FAILED, payload: e?.message ?? String(e) });
   }
 };
 
-/**
- * ✅ Đảm bảo có city UUID.
- * - Nếu city.id là UUID => dùng luôn
- * - Nếu city.id là "geo:..." hoặc null => coi như không có id, dùng lat/lon để tìm hoặc insert vào cities
- */
+// đảm bảo city.id là uuid hợp lệ
 const ensureCityUuid = async (city) => {
-  // ✅ CHỈ chấp nhận UUID. "geo:xxxx" sẽ không qua được.
+  // CHỈ chấp nhận UUID. "geo:xxxx" sẽ không qua được.
   if (isUuid(city?.id)) return city;
 
   const lat = city?.lat;
@@ -234,7 +227,7 @@ export const toggleFavorite = (city) => async (dispatch, getState) => {
     const device_id = await getDeviceId();
     const client = supabaseWithDevice(device_id);
 
-    // ✅ luôn đảm bảo uuid hợp lệ
+    // luôn đảm bảo uuid hợp lệ
     const ensuredCity = await ensureCityUuid(city);
 
     const list = getState()?.favorites?.list ?? [];
@@ -250,6 +243,9 @@ export const toggleFavorite = (city) => async (dispatch, getState) => {
       if (error) throw error;
 
       dispatch({ type: ActionTypes.REMOVE_FAVORITE, payload: ensuredCity.id });
+      const next = (getState()?.favorites?.list ?? []).filter((c) => c?.id !== ensuredCity.id);
+      await AsyncStorage.setItem(FAVORITES_CACHE_KEY, JSON.stringify(next));
+
     } else {
       const { data, error } = await client
         .from('favorites_device')
@@ -263,32 +259,42 @@ export const toggleFavorite = (city) => async (dispatch, getState) => {
       if (error) throw error;
 
       dispatch({ type: ActionTypes.ADD_FAVORITE, payload: ensuredCity });
+      const next = [ensuredCity, ...(getState()?.favorites?.list ?? [])]
+        .filter((c, idx, arr) => arr.findIndex((x) => x?.id === c?.id) === idx);
+
+      await AsyncStorage.setItem(FAVORITES_CACHE_KEY, JSON.stringify(next));
     }
   } catch (e) {
     console.log('toggleFavorite error:', e?.message ?? e);
   }
 };
-
-export const removeFavorite = (cityId) => async (dispatch) => {
+export const removeFavorite = (cityId) => async (dispatch, getState) => {
   try {
     const device_id = await getDeviceId();
     const client = supabaseWithDevice(device_id);
 
-    const { error } = await client
+    const { data, error } = await client
       .from('favorites_device')
       .delete()
       .eq('device_id', device_id)
       .eq('city_id', cityId)
       .select();
 
-      console.log('favorites_device delete data:', data); 
+    console.log('favorites_device delete data:', data);
 
     if (error) throw error;
 
     dispatch({ type: ActionTypes.REMOVE_FAVORITE, payload: cityId });
+
+    const next = (getState()?.favorites?.list ?? []).filter(
+      (c) => c?.id !== cityId
+    );
+
+    await AsyncStorage.setItem(
+      FAVORITES_CACHE_KEY,
+      JSON.stringify(next)
+    );
   } catch (e) {
     console.log('removeFavorite error:', e?.message ?? e);
   }
 };
-
-export const clearFavorites = () => ({ type: ActionTypes.FAVORITES_CLEAR });
