@@ -1,4 +1,3 @@
-// shared/immediateAlerts.js
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { canSendAlert, markAlertSent, pushWeatherAlert } from './notify';
 import {

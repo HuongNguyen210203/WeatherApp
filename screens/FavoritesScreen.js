@@ -1,4 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import * as Haptics from 'expo-haptics';
+
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+import { RectButton } from 'react-native-gesture-handler';
+import Animated, {
+  interpolate,
+  Extrapolation,
+  useAnimatedStyle,
+} from 'react-native-reanimated';
+
+
 import { connect } from 'react-redux';
 import {
   View,
@@ -25,6 +36,9 @@ function FavoritesScreen({
   const pickMode = route?.params?.pickMode === true;
 
   const [q, setQ] = useState('');
+  const ACTION_W = 110; // độ rộng action xoá
+
+  const deletingRef = React.useRef(new Set());
 
   useEffect(() => {
     fetchFavorites();
@@ -45,32 +59,85 @@ function FavoritesScreen({
     navigation.goBack();
   };
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.card}
-      activeOpacity={0.9}
-      onPress={() => onPick(item)}
-    >
-      <View style={{ flex: 1 }}>
-        <Text style={styles.title}>
-          {item?.name ?? 'Unknown'}
-          {item?.country ? `, ${item.country}` : ''}
-        </Text>
-        <Text style={styles.sub}>
-          {Number(item?.lat).toFixed(4)}, {Number(item?.lon).toFixed(4)}
-        </Text>
-        <Text style={styles.hint}>Tap to view weather</Text>
-      </View>
+  
 
+const renderRightActions = (progress, dragX, item) => {
+  const contentStyle = useAnimatedStyle(() => {
+      // Cho icon/text trượt nhẹ vào khi kéo
+      const translateX = interpolate(
+        dragX.value,
+        [-ACTION_W, 0],
+        [0, 24],
+        Extrapolation.CLAMP
+      );
+
+      const opacity = interpolate(progress.value, [0, 1], [0.6, 1], Extrapolation.CLAMP);
+
+      return { transform: [{ translateX }], opacity };
+    }, []);
+
+    return (
+      <View style={{ width: ACTION_W }}>
+        <View style={styles.deleteBg}>
+          <Animated.View style={[styles.deleteContent, contentStyle]} pointerEvents="none">
+            <MaterialIcons name="delete" size={22} color="#fff" />
+            <Text style={styles.deleteLabel}>Delete</Text>
+          </Animated.View>
+        </View>
+      </View>
+    );
+  };
+
+
+
+
+const renderItem = ({ item }) => (
+  <View style={styles.rowWrap}>
+    <ReanimatedSwipeable
+      renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, item)}
+      overshootRight={false}
+      rightThreshold={ACTION_W * 0.7} // phải kéo “đủ sâu” mới xoá, giảm xoá nhầm
+      friction={1.6}
+      onSwipeableOpen={(direction) => {
+        if (direction !== 'left') return;
+
+        const id = String(item.id);
+        if (deletingRef.current.has(id)) return;
+        deletingRef.current.add(id);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+
+        removeFavorite(item.id);
+        setTimeout(() => deletingRef.current.delete(id), 1200);
+      }}
+    >
       <TouchableOpacity
-        onPress={() => removeFavorite(item.id)}
-        style={styles.starBtn}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        style={styles.card}
+        activeOpacity={0.9}
+        onPress={() => onPick(item)}
       >
-        <MaterialIcons name="star" size={28} color="#FFD54A" />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>
+            {item?.name ?? 'Unknown'}
+            {item?.country ? `, ${item.country}` : ''}
+          </Text>
+          <Text style={styles.sub}>
+            {Number(item?.lat).toFixed(4)}, {Number(item?.lon).toFixed(4)}
+          </Text>
+          <Text style={styles.hint}>Tap to view weather</Text>
+        </View>
+
+        <TouchableOpacity
+          onPress={() => removeFavorite(item.id)}
+          style={styles.starBtn}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <MaterialIcons name="star" size={28} color="#FFD54A" />
+        </TouchableOpacity>
       </TouchableOpacity>
-    </TouchableOpacity>
-  );
+    </ReanimatedSwipeable>
+  </View>
+);
+
 
   return (
     <ImageBackground
@@ -199,6 +266,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  rowWrap: {
+    borderRadius: 22,
+    overflow: 'hidden',
+  },
+
+  deleteBg: {
+    flex: 1,
+    backgroundColor: 'rgba(220, 38, 38, 0.95)',
+    justifyContent: 'center',
+  },
+
+  deleteContent: {
+    alignSelf: 'flex-end',
+    paddingRight: 18,
+    alignItems: 'center',
+    gap: 6,
+  },
+
+  deleteLabel: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+
+
+
 });
 
 const mapStateToProps = (state) => ({
